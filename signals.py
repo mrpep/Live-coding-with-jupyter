@@ -1,61 +1,83 @@
 import numpy as np
 
-class Oscillator:
-    def __init__(self,freq,amp,phase,offset=0,fs=44100,osc_type='sin'):
-        self.freq = freq
-        self.amp = amp
-        self.phase = phase
-        self.fs = fs
-        self.osc_type = osc_type
-        self.i = 0
+class Signal:
+    def __init__(self, fs=44100):
+        self.params = {}
+        self.begin_t = 0
+        self.t = self.begin_t
+        self.end_t = None
+        self.loop = False
         self.is_playing = True
-        self.offset = offset
+        self.fs = fs
         
-    def get_samples(self,buffer_size):
+    def set_parameters(self,dict):
+        self.params.update(dict)
+        
+    def get_parameters(self):
+        return self.params
+        
+    def evaluate_parameters(self,t):
+        evaluated_params = {}
+        for param in self.params.keys():
+            if type(self.params[param]) not in [str,int,float]:
+                evaluated_params[param] = self.params[param].evaluate(t)
+            else:
+                evaluated_params[param] = self.params[param]
+        
+        return evaluated_params
+        
+    def get_samples(self, buffer_size):
         if self.is_playing:
-            t = np.arange(self.i,self.i+buffer_size)/self.fs
-            if type(self.freq) == Oscillator:
-                freq = self.freq.get_samples(buffer_size)
-            elif type(self.freq) == Sequencer:
-                freq = self.freq.get_samples(buffer_size)
-            else:
-                freq = self.freq
-
-            if type(self.amp) == Oscillator:
-                amp = self.amp.get_samples(buffer_size)
-            else:
-                amp = self.amp
-
-            if type(self.phase) == Oscillator:
-                phase = self.phase.get_samples(buffer_size)
-            else:
-                phase = self.phase
-
-            if type(self.offset) == Oscillator:
-                offset = self.offset.get_samples(buffer_size)
-            else:
-                offset = self.offset
-                
-            self.i = self.i + buffer_size
             
-            return offset + amp*np.sin(2*np.pi*freq*t + phase)
+            if self.end_t is not None and self.t - self.end_t>0:
+                self.t = 0
+                
+            if self.end_t is not None and self.t + buffer_size > self.end_t:
+                remaining_samples = self.end_t - self.t
+                new_cycle_samples = buffer_size - remaining_samples
+                if self.loop:
+                    y1 = self.evaluate(np.arange(self.t,self.t+remaining_samples)/self.fs)
+                    y2 = self.evaluate(np.arange(self.begin_t,self.begin_t + new_cycle_samples)/self.fs)
+                    self.t = self.begin_t + new_cycle_samples
+                    y = np.concatenate([y1,y2])
+                else:
+                    y1 = self.evaluate(np.arange(self.t,self.t+remaining_samples)/self.fs)
+                    y2 = np.zeros(shape=(new_cycle_samples,))
+                    self.t = self.begin_t
+                    y = np.concatenate([y1,y2])
+                    self.stop()
+            else:
+                y = self.evaluate(np.arange(self.t,self.t+buffer_size)/self.fs)
+                self.t = self.t + buffer_size
         else:
-            return np.zeros(shape=(buffer_size,))
-    
-    def set_freq(self,freq):
-        self.freq = freq
+            y = np.zeros(shape=(buffer_size,))
+            
+        return y
         
-    def set_amp(self,amp):
-        self.amp = amp
-        
-    def set_phase(self,phase):
-        self.phase = phase
+    def evaluate(self, t):
+        pass
         
     def play(self):
         self.is_playing = True
+        
     def stop(self):
         self.is_playing = False
-        
+
+class Oscillator(Signal):
+    def __init__(self,name,freq,amp,phase,offset=0,fs=44100,osc_type='sin'):
+        super(Oscillator,self).__init__()
+        self.params = {'name': name,
+                       'frequency':freq,
+                       'amplitude': amp,
+                       'phase': phase,
+                       'offset': offset,
+                       'fs': fs,
+                       'osc_type': osc_type}
+                       
+    def evaluate(self,t):
+        self.evaluated_params = self.evaluate_parameters(t)
+        return self.evaluated_params['offset'] + self.evaluated_params['amplitude']*np.sin(2*np.pi*self.evaluated_params['frequency']*t + self.evaluated_params['phase'])
+                       
 class Sequencer:
     def __init__(self, bpm=120, instrument=None, fs=44100,measure="4/4"):
         self.instrument = instrument
