@@ -33,49 +33,33 @@ class Signal:
                     evaluated_params["{}_sum".format(param)] = self.params[param].get_integral(t)
                 else:
                     evaluated_params["{}_sum".format(param)] = self.params[param]*t
-        
+        #print(evaluated_params)
         return evaluated_params
         
     def get_samples(self, buffer_size):
+        t = np.arange(self.actual_sample, self.actual_sample + buffer_size)/self.fs
+        if self.is_playing:  
+            y = self.evaluate(t)
+        else:
+            y = np.zeros(shape=(buffer_size,))
+        self.actual_sample = self.actual_sample + buffer_size
+        return y
+        
+    def evaluate(self, t):
+        pass
+    
+    def transform_t(self,t):
         begin_sample = int(self.begin_t*self.fs)
         if self.end_t is not None:
             end_sample = int(self.end_t*self.fs)
         else:
             end_sample = None
-        
-        if self.is_playing:  
-            if self.end_t is not None and self.actual_sample - end_sample>0:
-                self.actual_sample = begin_sample
-                
-            if self.end_t is not None and self.actual_sample + buffer_size > end_sample:
-
-                remaining_samples = end_sample - self.actual_sample
-                new_cycle_samples = buffer_size - remaining_samples
-                
-                if self.loop:
-                    y1 = self.evaluate(np.arange(self.actual_sample,self.actual_sample+remaining_samples)/self.fs)
-                    y2 = self.evaluate(np.arange(begin_sample,begin_sample + new_cycle_samples)/self.fs)
-                    self.actual_sample = begin_sample + new_cycle_samples
-                    y = np.concatenate([y1,y2])
-                    #print("{}_1".format(y.shape))
-                else:
-                    y1 = self.evaluate(np.arange(self.actual_sample,self.actual_sample+remaining_samples)/self.fs)
-                    y2 = np.zeros(shape=(new_cycle_samples,))
-                    self.actual_sample = begin_sample
-                    y = np.concatenate([y1,y2])
-                    self.stop()
-                    #print(y.shape + '_2')
-            else:
-                y = self.evaluate(np.arange(self.actual_sample,self.actual_sample+buffer_size)/self.fs)
-                self.actual_sample = self.actual_sample + buffer_size
-                #print(y.shape + '_3')
-        else:
-            y = np.zeros(shape=(buffer_size,))
-            #print(y.shape + '_4')
-        return y
-        
-    def evaluate(self, t):
-        pass
+            
+        if self.loop and end_sample is not None:
+            t = t*self.fs
+            t = t%(end_sample - begin_sample) + begin_sample
+            t = t/self.fs
+        return t
         
     def play(self):
         self.is_playing = True
@@ -83,6 +67,28 @@ class Signal:
     def stop(self):
         self.is_playing = False
 
+    def __mul__(self,other):
+        return MultiplyOscillator(self,other)
+    
+    def __add__(self,other):
+        return AddOscillator(self,other)
+    
+class MultiplyOscillator(Signal):
+    def __init__(self,a,b):
+        super(MultiplyOscillator,self).__init__()
+        self.a = a
+        self.b = b
+    def evaluate(self,t):
+        return self.a.evaluate(t)*self.b.evaluate(t)
+    
+class AddOscillator(Signal):
+    def __init__(self,a,b):
+        super(AddOscillator,self).__init__()
+        self.a = a
+        self.b = b
+    def evaluate(self,t):
+        return self.a.evaluate(t) + self.b.evaluate(t)
+    
 class Oscillator(Signal):
     def __init__(self,name,frequency,amplitude,phase,offset=0,fs=44100,osc_type='sin'):
         super(Oscillator,self).__init__()
@@ -97,6 +103,7 @@ class Oscillator(Signal):
         self.last_integration_value = 0
                        
     def evaluate(self,t):
+        t = self.transform_t(t)
         self.evaluated_params = self.evaluate_parameters(t,integrals=['frequency'])
         phase = 2*np.pi*self.evaluated_params['frequency_sum'] + self.evaluated_params['phase']
         return self.evaluated_params['offset'] + self.evaluated_params['amplitude']*np.sin(phase)
@@ -105,7 +112,7 @@ class Oscillator(Signal):
         pass
     
     def get_integral(self,t):
-        integral = self.last_integration_value + np.cumsum(self.evaluate(t))/self.params['fs']
+        integral = self.last_integration_value + np.cumsum(self.evaluate(t))/self.fs
         self.last_integration_value = integral[-1]
         
         return integral
