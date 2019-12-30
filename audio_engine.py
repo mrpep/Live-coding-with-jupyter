@@ -11,12 +11,12 @@ class AudioEngine(threading.Thread):
         self.is_running = True
         self.is_playing = False
 
-        self.sound_list = []
+        self.sound_list = {}
         loop_state = True
         self.i = 0
     
-    def add_sound(self,sound):
-        self.sound_list.append(sound)
+    def add_sound(self,sound,identifier=None):
+        self.sound_list[identifier] = sound
     
     def run(self):
         player = pyaudio.PyAudio()
@@ -31,7 +31,8 @@ class AudioEngine(threading.Thread):
                 #    data += sound.get_samples(self.buffer_size)
                 
                 data = utils.sources_sum(self.sound_list, self.buffer_size)
-                data = np.tanh(data.astype(np.float32))
+                data = data.astype(np.float32)
+                data = np.tanh(data)
                 data = data.tostring()
                 stream.write(data)
                 
@@ -44,6 +45,9 @@ class AudioEngine(threading.Thread):
             
     def remove_all_sounds(self):
         self.sound_list = []
+        
+    def remove_sound(self,identifier):
+        self.sound_list.pop(identifier)
         
     def pause(self):
         self.is_playing = False
