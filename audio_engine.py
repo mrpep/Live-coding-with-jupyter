@@ -22,7 +22,7 @@ class AudioEngine(threading.Thread):
         player = pyaudio.PyAudio()
         stream = player.open(format = pyaudio.paFloat32,channels=1,
                              rate=self.fs, output=True, 
-                             frames_per_buffer=self.buffer_size)
+                             frames_per_buffer=self.buffer_size,output_device_index=4)
         
         while self.is_running:
             if self.is_playing:

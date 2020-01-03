@@ -22,28 +22,61 @@ def note_to_hz(note):
     return hz
     
 def split_by_val(seq,val):
-    split_idxs = [0]
+    split_idxs = []
     for i,elem in enumerate(seq):
-        if elem == val and i != 0:
+        if elem == val:
             split_idxs.append(i)
             if i+1 < len(seq) and seq[i+1] != val:
                 split_idxs.append(i+1)
     split_idxs.append(len(seq))
+    split_idxs.insert(0,0)
+    split_idxs = list(set(split_idxs))
     
     splits = [seq[i:j] for i,j in zip(split_idxs[:-1],split_idxs[1:])]
     
     return splits
     
-def recursive_get_duration(sequence, val, duration, p, q):
+def recursive_get_duration(sequence, val, duration, p, q, multipliers):
+    #print("Calculating durations for level: {}".format(val))
     splits = split_by_val(sequence,val)
-    duration[p:q] = duration[p:q]*len(splits)
+    multipliers_subset = np.zeros((len(multipliers)))
+    i = p
+    #print(splits)
+    for split in splits:
+        if val in split:
+            multipliers_subset[i] = multipliers[i]
+            i = i+1
+        else:
+            multipliers_subset[i] = 1
+            i = i+len(split)        
+    
+    #print(multipliers_subset)
+    duration[p:q] = duration[p:q]*np.sum(multipliers_subset)
+    #print(duration)
     for split in splits:
         q = p + len(split)
         if len(split) > 1:
-            duration = recursive_get_duration(split,val+1,duration,p,q)
+            duration = recursive_get_duration(split,val+1,duration,p,q,multipliers)
         p = q
         
     return duration
+
+def get_duration_multipliers(sequence):
+    multipliers = []
+    for raw_note in sequence:
+        note = raw_note.replace('[','').replace(']','')
+        note_data = re.match(".*([/*])([.0123456789]*).*",note)
+        if note_data:
+            op = note_data.groups()[0]
+            quantity = note_data.groups()[1]
+            if op == '*':
+                multipliers.append(float(quantity))
+            else:
+                multipliers.append(1.0/float(quantity))
+        else:
+            multipliers.append(1.0)
+            
+    return multipliers
 
 def get_durations(seq_notes):
     state = 0
@@ -52,25 +85,31 @@ def get_durations(seq_notes):
         state = state + note.count('[') 
         states.append(state)
         state = state - note.count(']')
-        
-    duration = np.ones((len(states),))
+    
+    print(states)
+    multipliers = np.array(get_duration_multipliers(seq_notes))
+    duration = np.ones((len(multipliers),))
     p = 0
     q = len(states)
     val = 0
-    duration = recursive_get_duration(states,val,duration,p,q)
+    #print(duration/multipliers)
+    duration = recursive_get_duration(states,val,duration/multipliers,p,q,multipliers)
     
     return duration
     
-def score_to_seq(score):
+def score_to_seq(score,seq_length=1.0):
     #Durations:
     seq_notes = score.split()
-    durations = 1.0/get_durations(seq_notes)
+    durations = seq_length/get_durations(seq_notes)
     
     #Notes to freq:
     freqs = []
     for raw_note in seq_notes:
         note = raw_note.replace('[','').replace(']','')
-        freqs.append(note_to_hz(note))
+        if re.match(".*(SIL).*",note):
+            freqs.append(0.0001)
+        else:
+            freqs.append(note_to_hz(note))
         
     t = 0
     seq = []
