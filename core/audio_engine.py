@@ -4,25 +4,37 @@ import numpy as np
 import utils
 
 class AudioEngine(threading.Thread):
-    def __init__(self):
+    def __init__(self, fs = 44100, buffer_size = 512):
         super(AudioEngine,self).__init__()
-        self.fs = 44100
-        self.buffer_size = 1024
+        self.fs = fs
+        self.buffer_size = buffer_size
         self.is_running = True
         self.is_playing = False
-
+        self.input_device = None
+        self.output_device = None
         self.sound_list = {}
         loop_state = True
         self.i = 0
     
+    def set_input_device(self,device):
+        self.input_device = device
+        
+    def set_output_device(self,device):
+        self.output_device = device
+        
     def add_sound(self,sound,identifier=None):
         self.sound_list[identifier] = sound
     
     def run(self):
         player = pyaudio.PyAudio()
+        if self.input_device is None:
+            self.input_device = player.get_default_input_device_info()['index']
+        if self.output_device is None:
+            self.output_device = player.get_default_output_device_info()['index']
+        
         stream = player.open(format = pyaudio.paFloat32,channels=1,
                              rate=self.fs, output=True, 
-                             frames_per_buffer=self.buffer_size,output_device_index=4)
+                             frames_per_buffer=self.buffer_size,input_device_index=self.input_device,output_device_index=self.output_device)
         
         while self.is_running:
             if self.is_playing:
